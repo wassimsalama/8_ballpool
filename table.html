@@ -1,0 +1,270 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pool Shot Simulation</title>
+    <style>
+        
+        #player1-legend span, #player2-legend span {
+            display: inline-block;
+            width: 30px; 
+            height: 30px; 
+            border: 2px solid #fff; 
+            margin-right: 10px; 
+            margin-bottom: 5px; 
+            box-shadow: 0px 0px 2px #000; 
+        }
+        body {
+            background-color: #032c03; 
+            margin: 0; 
+            padding: 0; 
+        }   
+        #svg-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: auto;
+        }
+        .player-name {
+        color: white;
+        }
+        .active-player {
+        color: yellow; 
+        }
+        svg {
+            border: 2px solid black;
+        }
+        circle { cursor: grab; }
+        line { stroke: red; stroke-width: 2; }
+    
+        
+        #player-info {
+            display: flex;
+            justify-content: space-between; 
+            background-color: #032c03; 
+            padding: 10px;
+            margin-bottom: 20px; 
+            border-radius: 5px; 
+        }
+        #player-info div {
+            flex: 1; 
+        }
+        #player-info p {
+            color: white; 
+            font-weight: bold; 
+            font-size: 2em; 
+            margin: 0; 
+            padding: 5px 10px; 
+        }
+        #player1-container {
+            text-align: left; /* Align player 1's name to the left */
+        }
+        #player2-container {
+            text-align: right; /* Align player 2's name to the right */
+        }
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            let player1Group = Math.random() < 0.5 ? "High" : "Low";
+            let player2Group = player1Group === "High" ? "Low" : "High"; // Opposite of player 1
+
+// Function to display the colors under each player's name
+            function displayPlayerColors() {
+                const ballColorsHigh = ["YELLOW", "BLUE", "RED", "PURPLE", "ORANGE", "GREEN", "BROWN"];
+                const ballColorsLow = ["LIGHTYELLOW", "LIGHTBLUE", "PINK", "MEDIUMPURPLE", "LIGHTSALMON", "LIGHTGREEN", "SANDYBROWN"];
+    
+                let player1Colors = player1Group === "High" ? ballColorsHigh : ballColorsLow;
+                let player2Colors = player2Group === "High" ? ballColorsHigh : ballColorsLow;
+    
+                $('#player1-legend').html(player1Colors.map(color => `<span style="background-color: ${color};"></span>`).join(' '));
+                $('#player2-legend').html(player2Colors.map(color => `<span style="background-color: ${color};"></span>`).join(' '));
+        }
+
+        displayPlayerColors();
+
+
+
+
+            const MAX_LINE_LENGTH = 600; // Maximum line length for the drag
+            const params = new URLSearchParams(window.location.search);
+            const game_id = params.get("game_id");
+            let table_id = params.get("table_id");
+            const player1_name = params.get("player1");
+            const player2_name = params.get("player2");
+
+            $("#player1-name").text(player1_name ? `Player 1: ${player1_name}` : "Player 1: N/A");
+            $("#player2-name").text(player2_name ? `Player 2: ${player2_name}` : "Player 2: N/A");
+            let time = 0;  
+            
+            let currentPlayer = 1;
+
+    // Function to change the player's turn and update the UI accordingly
+    function changeTurn() {
+        if(currentPlayer === 1) {
+            // Change to player 2's turn
+            $('#player1-container').css('background-color', ''); // Reset to default
+            $('#player2-container').css('background-color', 'gold'); // Highlight for player 2
+            currentPlayer = 2;
+        } else {
+            // Change to player 1's turn
+            $('#player2-container').css('background-color', ''); // Reset to default
+            $('#player1-container').css('background-color', 'gold'); // Highlight for player 1
+            currentPlayer = 1;
+        }
+    }
+    changeTurn();
+
+            $.ajax({
+                url: '/initial',
+                type: 'GET',
+                data: { table_id: table_id },
+                dataType: 'json',
+                success: function(response) {
+                    $('#svg-container').html(response.svg);
+                    initTracking();
+                },
+                error: function(err) {
+                    console.error('Error fetching SVG:', err);
+                }
+            });
+
+            function initTracking() {
+                $('#svg-container').off('mousedown', 'circle[id="cueball"]');
+                $(window).off('mousemove');
+                $(window).off('mouseup');
+
+                let tracking = false;
+                let svg = $('#svg-container svg').get(0); // Get the SVG element
+
+                function getSVGPoint(event) {
+                    var point = svg.createSVGPoint();
+                    point.x = event.clientX;
+                    point.y = event.clientY;
+                    return point.matrixTransform(svg.getScreenCTM().inverse());
+                }
+
+                $('#svg-container').on('mousedown', 'circle[id="cueball"]', function(event) {
+                    console.log("mousedown event started");
+                    event.preventDefault();
+                    tracking = true;
+
+                    let startPoint = getSVGPoint(event); 
+                    let trackingLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    $(trackingLine).attr({
+                        'id': 'trackingLine',
+                        'x1': startPoint.x,
+                        'y1': startPoint.y,
+                        'x2': startPoint.x,
+                        'y2': startPoint.y,
+                        'stroke': 'red',
+                        'stroke-width': 2
+                    });
+                    svg.appendChild(trackingLine);
+                });
+
+                $(window).on('mousemove', function(event) {
+                    console.log("mousemove event while tracking");
+                    if (tracking) {
+                        let movePoint = getSVGPoint(event);
+                        let cueBall = $('circle[id="cueball"]');
+                        let cueBallCenter = {
+                            x: parseFloat(cueBall.attr('cx')),
+                            y: parseFloat(cueBall.attr('cy'))
+                        };
+
+                        let deltaX = movePoint.x - cueBallCenter.x;
+                        let deltaY = movePoint.y - cueBallCenter.y;
+                        let distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+                        if (distance > MAX_LINE_LENGTH) {
+                            let ratio = MAX_LINE_LENGTH / distance;
+                            deltaX *= ratio;
+                            deltaY *= ratio;
+                        }
+                        $('#trackingLine').attr({
+                            'x2': cueBallCenter.x + deltaX,
+                            'y2': cueBallCenter.y + deltaY
+                        });
+                    }
+                });
+
+                $(window).on('mouseup', function() {
+                    changeTurn();
+                    console.log("mouseup event ends tracking");
+                    if (tracking) {
+                        let cueBall = $('circle[id="cueball"]');
+                        let cueBallCenter = {
+                            x: parseFloat(cueBall.attr('cx')),
+                            y: parseFloat(cueBall.attr('cy'))
+                        };
+                        console.log(`Line end points: x2: ${cueBallCenter.x} ${cueBallCenter.y}`);
+
+                        let lineEndX = parseFloat($('#trackingLine').attr('x2'));
+                        let lineEndY = parseFloat($('#trackingLine').attr('y2'));
+
+                        console.log(`Line end points: x2: ${lineEndX}, y2: ${lineEndY}`);
+                        let deltaX = lineEndX - cueBallCenter.x;
+                        let deltaY = lineEndY - cueBallCenter.y;
+                        console.log(`Calculated deltas: deltaX: ${deltaX}, deltaY: ${deltaY}`);
+
+
+                        $('#trackingLine').remove();
+                        tracking = false;
+                        deltaX *= -6; 
+                        deltaY *= -6;
+                        
+                        console.log(`Sending AJAX request with deltaX: ${deltaX}, deltaY: ${deltaY}`);
+                        $.ajax({
+                            url: `/process-shot?game_id=${game_id}&table_id=${table_id}`,
+                            type: 'POST',
+                            contentType: 'application/json',
+                            data: JSON.stringify({ deltaX: deltaX, deltaY: deltaY , game_id:game_id,table_id:table_id}),
+                            success: function(response) {
+                                console.log('Shot saved:', response);
+                                animateShot(response.array);
+                                initTracking()
+                                table_id = response.tableID
+                                
+                            },
+                            error: function(err) {
+                                console.error('Error saving shot:', err);
+                            }
+                            
+                        });
+                        
+                    }
+                });
+            }
+            function animateShot(svgFrames) {
+                let index = 0;
+                function displayNextFrame() {
+                if (index < svgFrames.length) {
+                    $('#svg-container').html(svgFrames[index++]);
+                    requestAnimationFrame(displayNextFrame);
+                }
+                else{
+                    initTracking();
+                }
+                }
+            displayNextFrame();
+            }
+        });
+    </script>
+</head>
+<body>
+    <div id="player-info">
+        <div id="player1-container">
+            <p id="player1-name">Player 1: Name</p>
+            <div id="player1-legend"></div>
+        </div>
+        <div id="player2-container">
+            <p id="player2-name">Player 2: Name</p>
+            <div id="player2-legend"></div>
+        </div>
+    </div>    
+    <div id="svg-container"></div>
+</body>
+</html>  
